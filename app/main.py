@@ -83,48 +83,30 @@ MAX_AUDIO_BYTES = 100 * 1024 * 1024  # 100 MB
 @app.get("/models", tags=["Modelos"])
 def listar_modelos():
     """
-    Lista os modelos disponíveis e retorna as métricas
-    calculadas com o conjunto de validação.
+    Lista as versões dos modelos disponíveis e retorna suas métricas.
     """
     try:
-        if not VALIDACAO_CSV.is_file():
-                    raise HTTPException(
-                        status_code=500,
-                        detail=(
-                            "Arquivo de validação não encontrado: "
-                            f"{VALIDACAO_CSV}"
-                        ),
-                    )
-
-        
-
-        arquivos = sorted(
-            arquivo
-            for arquivo in MODELS_DIR.iterdir()
-            if arquivo.is_file()
+        modelos_dirs = sorted(
+            pasta
+            for pasta in MODELS_DIR.iterdir()
+            if pasta.is_dir() and pasta.name.startswith("sentiment_model_v")
         )
 
         modelos = []
+        print(f"Modelos encontrados: {len(modelos_dirs)}")
 
-        for arquivo in arquivos:
+        for pasta in modelos_dirs:
             modelo_info = {
-                "nome": arquivo.name,
-                "extensao": arquivo.suffix,
-                "tamanho_bytes": arquivo.stat().st_size,
-                "caminho": str(
-                    arquivo.relative_to(PROJECT_ROOT)
-                ).replace("\\", "/"),
+                "nome": pasta.name,
+                "caminho": str(pasta.relative_to(PROJECT_ROOT)).replace("\\", "/"),
                 "metricas": None,
             }
 
             try:
-                metricas = gerar_metricas_bert(
-                    arquivo,
+                modelo_info["metricas"] = gerar_metricas_bert(
+                    pasta,
                     VALIDACAO_CSV,
                 )
-
-                modelo_info["metricas"] = metricas
-
             except Exception as erro:
                 modelo_info["erro_metricas"] = str(erro)
 
@@ -133,12 +115,8 @@ def listar_modelos():
         return {
             "total": len(modelos),
             "diretorio": str(MODELS_DIR),
-            "arquivo_validacao": str(VALIDACAO_CSV),
             "modelos": modelos,
         }
-
-    except HTTPException:
-        raise
 
     except OSError as erro:
         raise HTTPException(
