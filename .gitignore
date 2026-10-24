@@ -1,1 +1,2 @@
-classifier\models
+# Modelos treinados de classificação de sentimentos
+/classifier/models/
