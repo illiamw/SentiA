@@ -1,0 +1,38 @@
+pandas
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg[binary]
+httpx
+scikit-learn
+python-multipart
+
+# Data processing
+numpy
+pandas
+
+# Machine Learning
+scikit-learn
+torch
+
+# Hugging Face - NLP
+datasets
+transformers
+accelerate
+
+# Audio transcription
+faster-whisper
+
+# API and environment variables
+httpx
+python-dotenv
+fastapi
+uvicorn[standard]
+
+# Database
+SQLAlchemy
+psycopg2-binary
+
+# PDF reports and charts
+reportlab
+matplotlib

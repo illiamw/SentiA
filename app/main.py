@@ -1,0 +1,400 @@
+
+
+import re
+import logging
+from datetime import datetime
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.concurrency import run_in_threadpool
+
+import datetime
+from datetime import datetime
+import os
+
+from classifier.treinar_incremental import treinar_incremental 
+from classifier.predict import preditor
+from transcritor.main import transcrever_audio
+from summary.main import gerar_relatorio_emocoes
+
+
+import httpx
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import SQLAlchemyError
+import logging
+from typing import Literal
+
+
+
+logger = logging.getLogger(__name__)
+
+app = FastAPI(
+    title="Sentia API",
+    description="API do assistente Sentia",
+    version="0.1.0",
+)
+
+DATABASE_URL = os.environ["DATABASE_URL"]
+OLLAMA_BASE_URL = os.getenv(
+    "OLLAMA_BASE_URL", "http://ollama:11434"
+)
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
+
+
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+
+PROJECT_ROOT = Path(__file__).resolve().parent
+SOURCE_DIR = PROJECT_ROOT / "source"
+SOURCE_DIR.mkdir(parents=True, exist_ok=True)
+
+logger = logging.getLogger(__name__)
+
+EXTENSOES_PERMITIDAS = {
+    ".mp3", ".wav", ".m4a", ".mp4", ".ogg", ".webm", ".mpeg"
+}
+
+MAX_AUDIO_BYTES = 100 * 1024 * 1024  # 100 MB
+
+
+
+
+class ChatRequest(BaseModel):
+    message: str
+
+
+@app.get("/")
+def root():
+    return {"app": "Sentia", "status": "ok"}
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+@app.get("/health/database")
+def database_health():
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+        return {"database": "ok"}
+    except SQLAlchemyError:
+        raise HTTPException(
+            status_code=503,
+            detail="Banco de dados indisponível",
+        )
+
+
+@app.get("/health/llm")
+async def llm_health():
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            response = await client.get(
+                f"{OLLAMA_BASE_URL}/api/tags"
+            )
+            response.raise_for_status()
+        return {"ollama": "ok"}
+    except (httpx.HTTPError, ValueError):
+        raise HTTPException(
+            status_code=503,
+            detail="Serviço LLM indisponível",
+        )
+
+
+
+
+
+@app.post("/chat")
+async def chat(request: ChatRequest):
+    try:
+        async with httpx.AsyncClient(timeout=300) as client:
+            response = await client.post(
+                f"{OLLAMA_BASE_URL}/api/chat",
+                json={
+                    "model": OLLAMA_MODEL,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": request.message,
+                        }
+                    ],
+                    "stream": False,
+                },
+            )
+
+            response.raise_for_status()
+            data = response.json()
+
+        return {
+            "model": OLLAMA_MODEL,
+            "response": data["message"]["content"],
+        }
+
+    
+
+    except httpx.HTTPStatusError as exc:
+        print("Status Ollama:", exc.response.status_code)
+        print("Resposta Ollama:", exc.response.text)
+
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "ollama_status": exc.response.status_code,
+                "ollama_error": exc.response.text,
+            },
+        ) from exc
+
+    except httpx.TimeoutException as exc:
+        logger.error("Timeout ao consultar Ollama: %s", str(exc))
+        raise HTTPException(
+            status_code=504,
+            detail="Tempo limite excedido ao consultar o modelo",
+        ) from exc
+
+    except httpx.RequestError as exc:
+        logger.error("Erro de conexão com Ollama: %s", str(exc))
+        raise HTTPException(
+            status_code=502,
+            detail="Não foi possível conectar ao Ollama",
+        ) from exc
+
+    except (KeyError, ValueError) as exc:
+        logger.exception("Resposta inesperada do Ollama")
+        raise HTTPException(
+            status_code=502,
+            detail="Resposta inválida do modelo de linguagem",
+        ) from exc
+
+    
+########################################
+#Registro de sentimentos no banco de dados para treinamento incremental do modelo de linguagem
+#
+######################################
+# Contrato de entrada da API
+class SentimentoRequest(BaseModel):
+    texto: str = Field(min_length=1)
+    sentimento: Literal[
+        "alegria",
+        "tristeza",
+        "medo",
+        "raiva",
+        "surpresa",
+        "nojo",
+    ]
+
+
+@app.on_event("startup")
+def criar_tabela_sentimentos():
+    with engine.begin() as connection:
+        connection.execute(text("""
+            CREATE TABLE IF NOT EXISTS sentimentos (
+                id SERIAL PRIMARY KEY,
+                texto TEXT NOT NULL,
+                sentimento VARCHAR(20) NOT NULL
+                    CHECK (sentimento IN (
+                        'alegria',
+                        'tristeza',
+                        'medo',
+                        'raiva',
+                        'surpresa',
+                        'nojo'
+                    )),
+                traino BOOLEAN NOT NULL DEFAULT FALSE,
+                criado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """))
+
+
+# Endpoint para registrar um texto e seu sentimento
+@app.post("/sentimentos", status_code=201)
+def criar_sentimento(request: SentimentoRequest):
+    try:
+        with engine.begin() as connection:
+            result = connection.execute(
+                text("""
+                    INSERT INTO sentimentos (texto, sentimento, traino)
+                    VALUES (:texto, :sentimento, FALSE)
+                    RETURNING id, texto, sentimento, traino, criado_em
+                """),
+                {
+                    "texto": request.texto.strip(),
+                    "sentimento": request.sentimento,
+                },
+            )
+
+            registro = result.mappings().one()
+
+        ### Treinamento incremental do modelo de linguagem
+        treinar_incremental(engine)
+
+        return dict(registro)
+
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao salvar o sentimento no banco de dados: {exc}",
+        ) from exc
+
+
+
+def executar_pipeline(
+    nome_paciente: str,
+    audio_path: Path,
+    timestamp: str,
+) -> dict:
+    """Executa a transcrição, classificação e geração do relatório."""
+
+    path_transcricao = (
+        SOURCE_DIR
+        / f"transcricao_{nome_paciente}_{timestamp}.txt"
+    )
+
+    path_classificar = (
+        SOURCE_DIR
+        / f"resultado_transcricao_{nome_paciente}_{timestamp}.json"
+    )
+
+    path_pdf = (
+        SOURCE_DIR
+        / f"sumarizacao_{nome_paciente}_{timestamp}.pdf"
+    )
+
+    transcrever_audio(audio_path, path_transcricao)
+
+    preditor(path_transcricao, path_classificar)
+
+    # Espera-se que esta função gere o PDF e, se configurada
+    # para isso, a minuta da sessão.
+    gerar_relatorio_emocoes(
+        caminho_json=path_classificar,
+        caminho_pdf=path_pdf,
+        paciente=nome_paciente,
+    )
+
+    return {
+        "paciente": nome_paciente,
+        "audio": str(audio_path),
+        "transcricao": str(path_transcricao),
+        "classificacao": str(path_classificar),
+        "relatorio_pdf": str(path_pdf),
+        "status": "concluido",
+    }
+
+def extrair_trechos(caminho_json: str | Path) -> dict:
+    """
+    Lê um JSON e retorna somente a chave 'trechos'.
+
+    Args:
+        caminho_json: Caminho do arquivo JSON.
+
+    Returns:
+        Dicionário contendo apenas os trechos.
+    """
+    caminho_json = Path(caminho_json)
+
+    with caminho_json.open("r", encoding="utf-8") as arquivo:
+        dados = json.load(arquivo)
+
+    return {
+        "trechos": dados.get("trechos", [])
+    }
+
+
+
+@app.post("/relatorio/{nome_paciente}")
+async def gerar_relatorio(
+    nome_paciente: str,
+    audio: UploadFile = File(...),
+):
+    """
+    Recebe um áudio, salva em source/ e executa o pipeline SentIA.
+    """
+
+    # Evita caminhos maliciosos ou nomes inválidos.
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", nome_paciente):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Nome do paciente inválido. "
+                "Utilize letras sem acentos, números, '_' ou '-'."
+            ),
+        )
+
+    extensao = Path(audio.filename or "").suffix.lower()
+
+    if extensao not in EXTENSOES_PERMITIDAS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Formato de áudio não permitido. "
+                f"Formatos aceitos: {', '.join(sorted(EXTENSOES_PERMITIDAS))}"
+            ),
+        )
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    audio_path = (
+        SOURCE_DIR
+        / f"audio_{nome_paciente}_{timestamp}{extensao}"
+    )
+
+    tamanho = 0
+
+    try:
+        # Salva o upload em blocos para evitar ler tudo na memória.
+        with audio_path.open("wb") as destino:
+            while True:
+                bloco = await audio.read(1024 * 1024)
+
+                if not bloco:
+                    break
+
+                tamanho += len(bloco)
+
+                if tamanho > MAX_AUDIO_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail="O áudio excede o limite de 100 MB.",
+                    )
+
+                destino.write(bloco)
+
+        if tamanho == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="O arquivo de áudio está vazio.",
+            )
+
+        resultado = await run_in_threadpool(
+            executar_pipeline,
+            nome_paciente,
+            audio_path,
+            timestamp,
+        )
+
+        resultado["trechos"] = extrair_trechos(resultado["caminho_json"])
+
+        return resultado
+
+    except HTTPException:
+        audio_path.unlink(missing_ok=True)
+        raise
+
+    except Exception as exc:
+        logger.exception("Erro ao processar áudio do SentIA.")
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Não foi possível concluir o processamento do áudio. "
+                f"Consulte os logs da aplicação.{exc}"
+            ),
+        ) from exc
+
+    finally:
+        await audio.close()
+
+
+

@@ -1,0 +1,35 @@
+{
+  "arquivo": "transcricao_paciente_001_2024-06-15_14-30-00.txt",
+  "total_trechos": 1,
+  "sentimento_geral": "raiva",
+  "probabilidades_medias": {
+    "alegria": 0.1321,
+    "tristeza": 0.1765,
+    "medo": 0.1916,
+    "raiva": 0.1938,
+    "surpresa": 0.1277,
+    "nojo": 0.1783
+  },
+  "distribuicao_percentual": {
+    "alegria": 0.0,
+    "tristeza": 0.0,
+    "medo": 0.0,
+    "raiva": 100.0,
+    "surpresa": 0.0,
+    "nojo": 0.0
+  },
+  "trechos": [
+    {
+      "texto": "Olá, pode - se sentar como você tem sentido desde nossa última conversa? Tenho me sentido muito cansado, parece que estou sempre tentando dar conta de tudo, mas nunca é o suficiente. No trabalho, fico preocupado em cometer algum erro e decepcionar as pessoas.",
+      "sentimento": "raiva",
+      "probabilidades": {
+        "alegria": 0.1321,
+        "tristeza": 0.1765,
+        "medo": 0.1916,
+        "raiva": 0.1938,
+        "surpresa": 0.1277,
+        "nojo": 0.1783
+      }
+    }
+  ]
+}

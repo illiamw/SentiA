@@ -1,0 +1,67 @@
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sentia-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    networks:
+      - sentia-network
+
+  # ==========================================
+  # POSTGRESQL
+  # ==========================================
+  postgres:
+    image: postgres:16
+    container_name: sentia-postgres
+
+    environment:
+      POSTGRES_USER: sentia
+      POSTGRES_PASSWORD: sentia
+      POSTGRES_DB: sentia
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - sentia_postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sentia -d sentia"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+    networks:
+      - sentia-network
+
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: sentia-ollama
+    restart: unless-stopped
+    volumes:
+      - sentia_ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    networks:
+      - sentia-network
+
+
+volumes:
+  sentia_postgres_data:
+  sentia_ollama_data:
+
+networks:
+  sentia-network:
+    driver: bridge
