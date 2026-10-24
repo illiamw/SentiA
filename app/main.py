@@ -1,9 +1,27 @@
 
-
+import json
 import re
 import logging
 from datetime import datetime
 from pathlib import Path
+from fastapi.responses import FileResponse
+
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+print(f"PROJECT_ROOT: {PROJECT_ROOT}")
+SOURCE_DIR = PROJECT_ROOT / "source"
+SOURCE_DIR.mkdir(parents=True, exist_ok=True)
+MODELS_DIR = PROJECT_ROOT / "classifier" / "models"
+MODELS_DIR.mkdir(parents=True, exist_ok=True)
+VALIDACAO_CSV = (
+    PROJECT_ROOT
+    / "classifier"
+    / "data"
+    / "validacao_sentimentos.csv"
+)
+print(f"MODELS_DIR: {MODELS_DIR}")
+
+
 from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
@@ -13,7 +31,10 @@ import datetime
 from datetime import datetime
 import os
 
+
+from classifier.eval import gerar_metricas_bert
 from classifier.treinar_incremental import treinar_incremental 
+from classifier.train import treino 
 from classifier.predict import preditor
 from transcritor.main import transcrever_audio
 from summary.main import gerar_relatorio_emocoes
@@ -46,9 +67,8 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 
-PROJECT_ROOT = Path(__file__).resolve().parent
-SOURCE_DIR = PROJECT_ROOT / "source"
-SOURCE_DIR.mkdir(parents=True, exist_ok=True)
+
+
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +80,71 @@ MAX_AUDIO_BYTES = 100 * 1024 * 1024  # 100 MB
 
 
 
+@app.get("/models", tags=["Modelos"])
+def listar_modelos():
+    """
+    Lista os modelos disponíveis e retorna as métricas
+    calculadas com o conjunto de validação.
+    """
+    try:
+        if not VALIDACAO_CSV.is_file():
+                    raise HTTPException(
+                        status_code=500,
+                        detail=(
+                            "Arquivo de validação não encontrado: "
+                            f"{VALIDACAO_CSV}"
+                        ),
+                    )
+
+        
+
+        arquivos = sorted(
+            arquivo
+            for arquivo in MODELS_DIR.iterdir()
+            if arquivo.is_file()
+        )
+
+        modelos = []
+
+        for arquivo in arquivos:
+            modelo_info = {
+                "nome": arquivo.name,
+                "extensao": arquivo.suffix,
+                "tamanho_bytes": arquivo.stat().st_size,
+                "caminho": str(
+                    arquivo.relative_to(PROJECT_ROOT)
+                ).replace("\\", "/"),
+                "metricas": None,
+            }
+
+            try:
+                metricas = gerar_metricas_bert(
+                    arquivo,
+                    VALIDACAO_CSV,
+                )
+
+                modelo_info["metricas"] = metricas
+
+            except Exception as erro:
+                modelo_info["erro_metricas"] = str(erro)
+
+            modelos.append(modelo_info)
+
+        return {
+            "total": len(modelos),
+            "diretorio": str(MODELS_DIR),
+            "arquivo_validacao": str(VALIDACAO_CSV),
+            "modelos": modelos,
+        }
+
+    except HTTPException:
+        raise
+
+    except OSError as erro:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao listar os modelos: {erro}",
+        ) from erro
 
 class ChatRequest(BaseModel):
     message: str
@@ -168,6 +253,19 @@ async def chat(request: ChatRequest):
             detail="Resposta inválida do modelo de linguagem",
         ) from exc
 
+
+@app.get("/treino_inicial")
+def treino_inicial():
+    try:
+        dir_output = treino()
+        return {"status": "concluido!", "dir_output": dir_output}
+    except Exception as e:
+        logger.error("Erro ao executar o treinamento inicial: %s", str(e))
+        raise HTTPException(
+            status_code=500,
+            detail="Erro ao executar o treinamento inicial",
+        ) from e
+    
     
 ########################################
 #Registro de sentimentos no banco de dados para treinamento incremental do modelo de linguagem
@@ -261,11 +359,13 @@ def executar_pipeline(
         SOURCE_DIR
         / f"sumarizacao_{nome_paciente}_{timestamp}.pdf"
     )
-
+    print(f"Gerando transcrição ...")
     transcrever_audio(audio_path, path_transcricao)
-
+    print(f"Transcrição salva em: {path_transcricao}")
+    print(f"Classificando sentimentos ...")
     preditor(path_transcricao, path_classificar)
-
+    print(f"Classificação salva em: {path_classificar}")
+    print(f"Gerando relatório em PDF ...")
     # Espera-se que esta função gere o PDF e, se configurada
     # para isso, a minuta da sessão.
     gerar_relatorio_emocoes(
@@ -273,8 +373,11 @@ def executar_pipeline(
         caminho_pdf=path_pdf,
         paciente=nome_paciente,
     )
+    print(f"Relatório PDF salvo em: {path_pdf}")
+    print(f"Pipeline concluído para o paciente: {nome_paciente}")
 
     return {
+        "data_hora": timestamp,
         "paciente": nome_paciente,
         "audio": str(audio_path),
         "transcricao": str(path_transcricao),
@@ -374,7 +477,7 @@ async def gerar_relatorio(
             timestamp,
         )
 
-        resultado["trechos"] = extrair_trechos(resultado["caminho_json"])
+        resultado["trechos"] = extrair_trechos(resultado["classificacao"])
 
         return resultado
 
@@ -396,5 +499,30 @@ async def gerar_relatorio(
     finally:
         await audio.close()
 
+@app.get("/relatorios/{nome_arquivo}")
+def baixar_relatorio(nome_arquivo: str):
+    pasta_relatorios = Path("/app/source").resolve()
+    arquivo = (pasta_relatorios / nome_arquivo).resolve()
 
+    # Impede acesso a arquivos fora da pasta de relatórios
+    if arquivo.parent != pasta_relatorios:
+        raise HTTPException(
+            status_code=400,
+            detail="Nome de arquivo inválido",
+        )
 
+    if not arquivo.is_file() or arquivo.suffix.lower() != ".pdf":
+        raise HTTPException(
+            status_code=404,
+            detail="Relatório PDF não encontrado",
+        )
+
+    return FileResponse(
+        path=arquivo,
+        media_type="application/pdf",
+        filename=arquivo.name,
+    )
+
+if __name__ == "__main__":
+    treino_inicial()
+    gerar_relatorio("William", SOURCE_DIR / "audio_William_20230915_123456.mp3")

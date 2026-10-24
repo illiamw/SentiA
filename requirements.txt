@@ -22,6 +22,7 @@ accelerate
 
 # Audio transcription
 faster-whisper
+av==18.1.0
 
 # API and environment variables
 httpx

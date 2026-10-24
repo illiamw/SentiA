@@ -130,9 +130,12 @@ TRANSCRIÇÃO DA SESSÃO:
             },
         ],
         "stream": False,
-        "options": {
-            "temperature": 0.2,
-        },
+            "options": {
+                "temperature": 0.2,
+                "repeat_penalty": 1.15,
+                "repeat_last_n": 128,
+                "num_predict": 1024,
+            },
     }
 
     payload_topicos = {
@@ -152,9 +155,12 @@ TRANSCRIÇÃO DA SESSÃO:
                 },
             ],
             "stream": False,
-            "options": {
-                "temperature": 0.2,
-            },
+                "options": {
+                    "temperature": 0.2,
+                    "repeat_penalty": 1.15,
+                    "repeat_last_n": 128,
+                    "num_predict": 1024,
+                },
         }
 
     payload_proximos = {
@@ -174,10 +180,14 @@ TRANSCRIÇÃO DA SESSÃO:
                 },
             ],
             "stream": False,
-            "options": {
-                "temperature": 0.2,
-            },
+                "options": {
+                    "temperature": 0.2,
+                    "repeat_penalty": 1.15,
+                    "repeat_last_n": 128,
+                    "num_predict": 1024,
+                },
         }
+
 
     try:
         with httpx.Client(timeout=300.0) as client:
@@ -486,8 +496,8 @@ def gerar_relatorio_emocoes(
 
 if __name__ == "__main__":
 
-    NOME_PACIENTE = "paciente_002"
-    DATA_HORA_TRANSCRICAO = "2024-06-15_14-30-00"
+    NOME_PACIENTE = "William"
+    DATA_HORA_TRANSCRICAO = "20230915_123456"
     PATH_CLASSIFIRR = PROJECT_ROOT /  "source" / f"resultado_transcricao_{NOME_PACIENTE}_{DATA_HORA_TRANSCRICAO}.json"
     PATH_SUMMARIZATION = PROJECT_ROOT /  "source" / f"sumarizacao_{NOME_PACIENTE}_{DATA_HORA_TRANSCRICAO}.pdf"
 

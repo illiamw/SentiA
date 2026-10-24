@@ -1,0 +1,47 @@
+{
+  "arquivo": "transcricao_William_20230915_123456.txt",
+  "total_trechos": 2,
+  "sentimento_geral": "nojo",
+  "probabilidades_medias": {
+    "alegria": 0.1516,
+    "tristeza": 0.168,
+    "medo": 0.1728,
+    "raiva": 0.1662,
+    "surpresa": 0.1492,
+    "nojo": 0.1923
+  },
+  "distribuicao_percentual": {
+    "alegria": 0.0,
+    "tristeza": 0.0,
+    "medo": 0.0,
+    "raiva": 0.0,
+    "surpresa": 0.0,
+    "nojo": 100.0
+  },
+  "trechos": [
+    {
+      "texto": "Olá, pode ser acomodar, como você tem se sentido desde a nossa última conversa? Tenho me sentido muito cansado, parece que estou sempre tentando dar conta de tudo, mas nunca é suficiente, no trabalho fico preocupado em cometer algum erro e decepcionar as pessoas. Quando essa preocupação aparece, o que você costuma pensar? Tudo que, se eu errar, vou perceber que eu não sou tão competente como imaginava. Às vezes, reviso a mesma tarefa várias vezes, mesmo quando termino, continuo pensando se fiz alguma coisa errada. E como isso afeta você ao longo do dia? Fico tenso irritado, tenho dificuldade para descansar, porque minha cabeça continua funcionando. Quando cheguei em casa, quero ficar sozinho e não conversar com ninguém, depois me sinto culpado por me afastar das pessoas de quem eu gosto. Você percebe alguma situação recente em que esse sentimento tenha ficado mais forte? Na semana passada, meu gestor pediu para conversar comigo. Antes mesmo de saber o motivo, imaginei que tinha feito algo errado, meu coração acelerou e fiquei com medo. No fim, ele só queria agradecer por eu ter ajudado em um projeto. Então, antes de terem informações sobre a conversa, você já imaginou um resultado negativo. Sim, eu sei que faço isso, mas parece automático. Quando recebi o agradecimento, senti alívio e até fiquei feliz. Só que depois comecei a pensar que talvez ele estivesse apenas sendo educado. O que você diria a um amigo que tivesse resultado um bom trabalho e recebido esse mesmo agradecimento? Eu diria que ele deveria aceitar o elogio e reconhecer o esforço que fez. Acho que seria mais fácil falar sobre isso para outra pessoa do que acreditar quando acontece comigo. O que torna difícil a aplicar é essa mesma compreensão a você. Tenha a sensação de que preciso provar o tempo todo que merece estar no disto. Sem descanso, sinto que estou sendo preguiçoso. Se cometa um erro, um trato, isso como se fosse uma prova de que não sou bom bastante. Parece que você está estabelecendo um padrão muito exigente para si mesmo, como você percebe isso fora do trabalho. Também acontece com os meus amigos e minha família. Às vezes recuso convites porque estou cansado ou preocupado com alguma coisa. Depois vejo as fotos e sinto tristeza porque não tem ter participado. Tenho medo de que pensem que não me importo com eles.",
+      "sentimento": "nojo",
+      "probabilidades": {
+        "alegria": 0.1545,
+        "tristeza": 0.1703,
+        "medo": 0.163,
+        "raiva": 0.177,
+        "surpresa": 0.1534,
+        "nojo": 0.1819
+      }
+    },
+    {
+      "texto": "porque estou cansado ou preocupado com alguma coisa. Depois vejo as fotos e sinto tristeza porque não tem ter participado. Tenho medo de que pensem que não me importo com eles. Você já começou com alguém próximo sobre estar sentido assim? Conversei um pouco com a minha irmã. Ela disse que sente minha falta e gostaria que eu aparecesse mais. Fiquei triste porque percebi que tenho me afastado. Mas também fiquei contente por ela ter falado comigo com sinceridade. O que você gostaria de fazer a partir disso? Gostaria de marcar alguma coisa com ela, mesmo que seja algo simples. Talvez tomar um café no final de semana. Não quero esperar estar completamente tranquilo para voltar a conviver com as pessoas. Por evolução do trabalho, podemos observar os pensamentos que surgem antes de você ter todas as informações. Que evidência você costuma considerar quando pensa que cometeu um erro? Normalmente considero só o que pode dar errado. Quase nunca lembro das tarefas que conclui bem ou das vezes que recebi um retorno positivo. Durante semana você poderia registrar uma situação que provoque preocupação. O pensamento que apareceu é a emoção que sentiu e quais evidências apoiam ou contradizem esse pensamento. Não é necessário forçar um pensamento positivo, mas tentar avaliar a situação de forma mais completa. Acho que consigo fazer isso. Talvez me ajude a perceber quando estou tirando conclusões antes de saber o que está acontecendo. E gostaria que você também observasse os momentos em que consegue descansar sem cobrar. Mas que sejam curtos, como está se sentindo agora ao final da sessão. Estou um pouco mais leve e ainda sinto preocupação com as coisas que preciso resolver, mas também sinto esperança de conseguir mudar alguns hábitos. Percebo que não preciso resolver tudo de uma vez. Vamos retomar essas observações na próxima sessão e conversar sobre o que você perceber durante semana. Tudo bem, vou tentar marcar um café com minha irmã e fazer os registros. Obrigado. Obrigado por compartilhar essa experiência hoje. Nos vemos na próxima sessão. Até a próxima sessão!",
+      "sentimento": "nojo",
+      "probabilidades": {
+        "alegria": 0.1487,
+        "tristeza": 0.1657,
+        "medo": 0.1826,
+        "raiva": 0.1554,
+        "surpresa": 0.145,
+        "nojo": 0.2026
+      }
+    }
+  ]
+}

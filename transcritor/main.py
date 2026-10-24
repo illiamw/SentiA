@@ -65,8 +65,8 @@ def transcrever_audio(
 
 if __name__ == "__main__":
 
-    NOME_PACIENTE = "paciente_002"
-    DATA_HORA_TRANSCRICAO = "2024-06-15_14-30-00"
+    NOME_PACIENTE = "William"
+    DATA_HORA_TRANSCRICAO = "20230915_123456"
     AUDIO = PROJECT_ROOT / "source" / f"audio_{NOME_PACIENTE}_{DATA_HORA_TRANSCRICAO}.mp4"
     PATH_TRANSCRICAO = PROJECT_ROOT /  "source" / f"transcricao_{NOME_PACIENTE}_{DATA_HORA_TRANSCRICAO}.txt"
 

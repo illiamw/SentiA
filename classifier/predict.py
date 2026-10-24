@@ -15,6 +15,41 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 OUTPUT_DIR = PROJECT_ROOT / "classifier" / "models"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+def get_model_tokens():
+
+    MODEL_DIR = obter_ultima_versao()
+    print(f"Carregando modelo de sentimento da versão: {MODEL_DIR}")
+
+
+
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR)
+
+    model = AutoModelForSequenceClassification.from_pretrained(
+        MODEL_DIR
+    ).to(device)
+
+    model.eval()
+
+    # Limite de tokens suportado pelo modelo, incluindo tokens especiais.
+    MAX_TOKENS = min(
+        512,
+        model.config.max_position_embeddings,
+    )
+
+    # Reserva espaço para [CLS], [SEP] e outros tokens especiais.
+    TOKENS_ESPECIAIS = tokenizer.num_special_tokens_to_add(pair=False)
+    TAMANHO_TRECHO = MAX_TOKENS - TOKENS_ESPECIAIS
+
+
+    ROTULOS = obter_rotulos(model)
+    print("Rótulos do modelo:", ROTULOS)
+    return tokenizer, model, device, MAX_TOKENS, TAMANHO_TRECHO, ROTULOS
+
+
+
 def listar_versoes():
     """
     Retorna as versões válidas em ordem numérica.
@@ -50,10 +85,6 @@ def obter_ultima_versao():
     return versoes[-1][1]
 
 
-MODEL_DIR = obter_ultima_versao()
-print(f"Carregando modelo de sentimento da versão: {MODEL_DIR}")
-
-
 
 
 EMOCOES = [
@@ -65,29 +96,11 @@ EMOCOES = [
     "nojo",
 ]
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR)
-
-model = AutoModelForSequenceClassification.from_pretrained(
-    MODEL_DIR
-).to(device)
-
-model.eval()
-
-# Limite de tokens suportado pelo modelo, incluindo tokens especiais.
-MAX_TOKENS = min(
-    512,
-    model.config.max_position_embeddings,
-)
-
-# Reserva espaço para [CLS], [SEP] e outros tokens especiais.
-TOKENS_ESPECIAIS = tokenizer.num_special_tokens_to_add(pair=False)
-TAMANHO_TRECHO = MAX_TOKENS - TOKENS_ESPECIAIS
 
 
 
-def obter_rotulos() -> list[str]:
+
+def obter_rotulos(model) -> list[str]:
     """Obtém os nomes das classes na ordem das saídas do modelo."""
     id2label = model.config.id2label
     rotulos = []
@@ -109,14 +122,12 @@ def obter_rotulos() -> list[str]:
     return rotulos
 
 
-ROTULOS = obter_rotulos()
-print("Rótulos do modelo:", ROTULOS)
-
 
 def dividir_em_trechos(
     texto: str,
-    tamanho: int = TAMANHO_TRECHO,
+    tamanho: int = None,
     sobreposicao: int = 40,
+    tokenizer = None,
 ) -> list[list[int]]:
     """
     Divide o texto em trechos de IDs de tokens.
@@ -162,8 +173,15 @@ def analisar_sentimento(texto: str) -> dict:
 def classificar_trechos(
     trechos: list[list[int]],
     batch_size: int = 8,
+    tokenizer: AutoTokenizer = None,
+    model: AutoModelForSequenceClassification = None,
+    device: torch.device = None,
+    MAX_TOKENS: int = None,
+    TAMANHO_TRECHO: int = None,
+    ROTULOS: list[str] = None
 ) -> list[dict]:
     """Classifica trechos em lotes usando o tokenizer diretamente."""
+    
     resultados = []
 
     for inicio in range(0, len(trechos), batch_size):
@@ -217,6 +235,13 @@ def analisar_transcricao(
     caminho_arquivo: str | Path,
     batch_size: int = 8,
     sobreposicao: int = 40,
+    TAMANHO_TRECHO = None,
+    ROTULOS = None,
+    tokenizer = None,
+    model = None,
+    device = None,
+    MAX_TOKENS = None,
+
 ) -> dict:
     """
     Analisa uma transcrição TXT inteira.
@@ -243,7 +268,10 @@ def analisar_transcricao(
 
     trechos = dividir_em_trechos(
         texto,
+        tamanho=TAMANHO_TRECHO,
         sobreposicao=sobreposicao,
+        tokenizer=tokenizer
+
     )
     print(f"Total de trechos gerados: {len(trechos)}")
     print(f"Tamanho de cada trecho (tokens): {TAMANHO_TRECHO}")
@@ -254,6 +282,12 @@ def analisar_transcricao(
     resultados = classificar_trechos(
         trechos,
         batch_size=batch_size,
+        tokenizer=tokenizer,
+        model=model,
+        device=device,
+        MAX_TOKENS=MAX_TOKENS,
+        TAMANHO_TRECHO=TAMANHO_TRECHO,
+        ROTULOS=ROTULOS 
     )
     print(f"Total de trechos classificados: {len(resultados)}")
     print(f"Exemplo de resultado do primeiro trecho: {resultados[0]}")
@@ -299,10 +333,18 @@ def preditor(PATH_TRANSCRICAO: str | Path, PATH_SAIDA: str | Path = None) -> any
     Retorna uma função que pode ser usada como preditor de sentimento
     em um pipeline de processamento de texto.
     """
+    tokenizer, model, device, MAX_TOKENS, TAMANHO_TRECHO, ROTULOS = get_model_tokens()
     resultado = analisar_transcricao(
             caminho_arquivo=PATH_TRANSCRICAO,
             batch_size=8,
             sobreposicao=40,
+            TAMANHO_TRECHO=TAMANHO_TRECHO,
+            ROTULOS=ROTULOS,
+            tokenizer=tokenizer,
+            model=model,
+            device=device,
+            MAX_TOKENS=MAX_TOKENS
+
         )
     
     print(json.dumps(
@@ -328,9 +370,8 @@ def preditor(PATH_TRANSCRICAO: str | Path, PATH_SAIDA: str | Path = None) -> any
 
 if __name__ == "__main__":
     
-    NOME_PACIENTE = "paciente_002"
-    DATA_HORA_TRANSCRICAO = "2024-06-15_14-30-00"
-
+    NOME_PACIENTE = "William"
+    DATA_HORA_TRANSCRICAO = "20230915_123456"
     preditor(
         PATH_TRANSCRICAO=PROJECT_ROOT  / "source" / f"transcricao_{NOME_PACIENTE}_{DATA_HORA_TRANSCRICAO}.txt",
         PATH_SAIDA=PROJECT_ROOT  / "source" / f"resultado_transcricao_{NOME_PACIENTE}_{DATA_HORA_TRANSCRICAO}.json"
