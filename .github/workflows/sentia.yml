@@ -41,7 +41,7 @@ jobs:
             set -e
 
             echo "========================================"
-            echo "Starting DATAPULSE deployment"
+            echo "Starting SENTIA deployment"
             echo "========================================"
 
             # -------------------------------------------------
