@@ -48,7 +48,7 @@ jobs:
             # CHECK DIRECTORY
             # -------------------------------------------------
 
-            cd /home/${{ secrets.EC2_USER }}/SENTIA
+            cd /home/${{ secrets.EC2_USER }}/SentiA
 
             echo "Current directory:"
             pwd
