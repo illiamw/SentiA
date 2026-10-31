@@ -7,6 +7,10 @@ from pathlib import Path
 from fastapi.responses import FileResponse
 import time
 
+from fastapi.middleware.cors import CORSMiddleware
+
+
+
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -61,6 +65,16 @@ app = FastAPI(
     title="Sentia API",
     description="API do assistente Sentia",
     version="0.1.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "*"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 DATABASE_URL = os.environ["DATABASE_URL"]
