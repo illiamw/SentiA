@@ -140,7 +140,7 @@ class ChatRequest(BaseModel):
 
 @app.get("/")
 def root():
-    return {"app": "Sentia", "status": "ok"}
+    return {"app": "Sentia", "status": "ok", "version": "0.1.0"}
 
 
 @app.get("/health")
