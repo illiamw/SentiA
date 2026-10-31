@@ -43,12 +43,15 @@ from summary.main import gerar_relatorio_emocoes
 
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 import logging
 from typing import Literal
+
+# Controle dos processamentos em execução
+processamentos = {}
 
 
 
@@ -142,14 +145,14 @@ class ChatRequest(BaseModel):
 
 @app.get("/")
 def root():
-    print("Root endpoint accessed, Version 0.1.1")
-    return {"app": "Sentia", "status": "ok", "version": "0.1.1"}
+    print("Root endpoint accessed, Version 0.1.2")
+    return {"app": "Sentia", "status": "ok", "version": "0.1.2"}
 
 
 @app.get("/health")
 def health():
-    print("Health endpoint accessed, Version 0.1.1")
-    return {"app": "Sentia", "status": "ok", "version": "0.1.1"}
+    print("Health endpoint accessed, Version 0.1.2")
+    return {"app": "Sentia", "status": "ok", "version": "0.1.2"}
 
 
 @app.get("/health/database")
@@ -428,6 +431,50 @@ def executar_pipeline(
         "status": "concluido",
     }
 
+def executar_pipeline_background(
+    nome_paciente: str,
+    audio_path: Path,
+    timestamp: str,
+    id_sessao: str,
+):
+    """Executa o pipeline em segundo plano."""
+
+    processamentos[id_sessao]["status"] = "processando"
+
+    try:
+        resultado = executar_pipeline(
+            nome_paciente=nome_paciente,
+            audio_path=audio_path,
+            timestamp=timestamp,
+        )
+
+        resultado["trechos"] = extrair_trechos(
+            resultado["classificacao"]
+        )
+
+        processamentos[id_sessao].update({
+            "status": "concluido",
+            "resultado": resultado,
+            "finalizado_em": datetime.now().isoformat(),
+        })
+
+        logger.info(
+            "Pipeline concluído para a sessão %s",
+            id_sessao,
+        )
+
+    except Exception as exc:
+        processamentos[id_sessao].update({
+            "status": "erro",
+            "erro": str(exc),
+            "finalizado_em": datetime.now().isoformat(),
+        })
+
+        logger.exception(
+            "Erro durante o processamento da sessão %s",
+            id_sessao,
+        )
+
 
 def extrair_trechos(caminho_json: str | Path) -> dict:
     """
@@ -450,30 +497,26 @@ def extrair_trechos(caminho_json: str | Path) -> dict:
 
 
 
-@app.post("/relatorio/{nome_paciente}")
+@app.post("/relatorio/{nome_paciente}", status_code=202)
 async def gerar_relatorio(
     nome_paciente: str,
+    background_tasks: BackgroundTasks,
     audio: UploadFile = File(...),
 ):
     """
-    Recebe um áudio, salva em source/ e executa o pipeline SentIA.
-    Retorna o nome esperado do PDF em todos os erros.
+    Recebe um áudio, salva em source/ e agenda
+    o processamento do SentiA em segundo plano.
+    Retorna imediatamente o identificador da sessão.
     """
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     nome_pdf = f"sumarizacao_{nome_paciente}_{timestamp}.pdf"
+    id_sessao = f"{nome_paciente}_{timestamp}"
 
-    # Evita caminhos maliciosos ou nomes inválidos.
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", nome_paciente):
         raise HTTPException(
             status_code=400,
-            detail={
-                "erro": (
-                    "Nome do paciente inválido. "
-                    "Utilize letras sem acentos, números, '_' ou '-'."
-                ),
-                "arquivo_pdf": nome_pdf,
-            },
+            detail="Nome do paciente inválido.",
         )
 
     extensao = Path(audio.filename or "").suffix.lower()
@@ -482,11 +525,8 @@ async def gerar_relatorio(
         raise HTTPException(
             status_code=400,
             detail={
-                "erro": (
-                    "Formato de áudio não permitido. "
-                    f"Formatos aceitos: {', '.join(sorted(EXTENSOES_PERMITIDAS))}"
-                ),
-                "arquivo_pdf": nome_pdf,
+                "erro": "Formato de áudio não permitido.",
+                "formatos_aceitos": sorted(EXTENSOES_PERMITIDAS),
             },
         )
 
@@ -498,8 +538,9 @@ async def gerar_relatorio(
     tamanho = 0
 
     try:
-        # Salva o upload em blocos para evitar ler tudo na memória.
+        # Salva o áudio antes de agendar o processamento.
         with audio_path.open("wb") as destino:
+
             while True:
                 bloco = await audio.read(1024 * 1024)
 
@@ -511,10 +552,7 @@ async def gerar_relatorio(
                 if tamanho > MAX_AUDIO_BYTES:
                     raise HTTPException(
                         status_code=413,
-                        detail={
-                            "erro": "O áudio excede o limite de 100 MB.",
-                            "arquivo_pdf": nome_pdf,
-                        },
+                        detail="O áudio excede o limite de 100 MB.",
                     )
 
                 destino.write(bloco)
@@ -522,50 +560,150 @@ async def gerar_relatorio(
         if tamanho == 0:
             raise HTTPException(
                 status_code=400,
-                detail={
-                    "erro": "O arquivo de áudio está vazio.",
-                    "arquivo_pdf": nome_pdf,
-                },
+                detail="O arquivo de áudio está vazio.",
             )
 
-        resultado = await run_in_threadpool(
-            executar_pipeline,
+        # Registra a sessão.
+        processamentos[id_sessao] = {
+            "id_sessao": id_sessao,
+            "paciente": nome_paciente,
+            "timestamp": timestamp,
+            "status": "aguardando",
+            "criado_em": datetime.now().isoformat(),
+            "resultado": None,
+            "erro": None,
+        }
+
+        # Agenda a execução em segundo plano.
+        background_tasks.add_task(
+            executar_pipeline_background,
             nome_paciente,
             audio_path,
             timestamp,
+            id_sessao,
         )
 
-        resultado["trechos"] = extrair_trechos(
-            resultado["classificacao"]
-        )
-
-        return resultado
+        # Retorna imediatamente.
+        return {
+            "mensagem": "Processamento iniciado com sucesso.",
+            "id_sessao": id_sessao,
+            "paciente": nome_paciente,
+            "status": "aguardando",
+            "audio": str(audio_path),
+            "arquivo_pdf": nome_pdf,
+            "endpoint_status": f"/relatorio/{id_sessao}/status",
+        }
 
     except HTTPException:
         audio_path.unlink(missing_ok=True)
         raise
 
     except Exception as exc:
-        logger.exception("Erro ao processar áudio do SentIA.")
+        audio_path.unlink(missing_ok=True)
+
+        logger.exception("Erro ao iniciar processamento do SentiA.")
 
         raise HTTPException(
             status_code=500,
-            detail={
-                "erro": (
-                    "Não foi possível concluir o processamento do áudio. "
-                    "Consulte os logs da aplicação."
-                ),
-                "arquivo_pdf": nome_pdf,
-            },
+            detail="Não foi possível iniciar o processamento.",
         ) from exc
 
     finally:
         await audio.close()
 
-@app.get("/relatorios/{nome_arquivo}")
-def baixar_relatorio(nome_arquivo: str):
+
+@app.get("/relatorio/{id_sessao}/status")
+def consultar_status_relatorio(id_sessao: str):
+    """
+    Consulta o status do processamento e verifica
+    se os arquivos de saída foram criados.
+    """
+
+    if not re.fullmatch(
+        r"[A-Za-z0-9_-]{1,100}",
+        id_sessao,
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Identificador de sessão inválido.",
+        )
+
+    if id_sessao not in processamentos:
+        raise HTTPException(
+            status_code=404,
+            detail="Sessão não encontrada.",
+        )
+
+    dados = processamentos[id_sessao]
+
+    nome_paciente = dados["paciente"]
+    timestamp = dados["timestamp"]
+
+    # Caminhos dos arquivos esperados.
+    path_transcricao = (
+        SOURCE_DIR
+        / f"transcricao_{nome_paciente}_{timestamp}.txt"
+    )
+
+    path_classificar = (
+        SOURCE_DIR
+        / f"resultado_transcricao_{nome_paciente}_{timestamp}.json"
+    )
+
+    path_pdf = (
+        SOURCE_DIR
+        / f"sumarizacao_{nome_paciente}_{timestamp}.pdf"
+    )
+
+    arquivos = {
+        "transcricao": path_transcricao,
+        "classificacao": path_classificar,
+        "relatorio_pdf": path_pdf,
+    }
+
+    verificacao = {
+        nome: {
+            "criado": caminho.is_file(),
+            "caminho": str(caminho),
+            "tamanho_bytes": (
+                caminho.stat().st_size
+                if caminho.is_file()
+                else 0
+            ),
+        }
+        for nome, caminho in arquivos.items()
+    }
+
+    todos_criados = all(
+        arquivo["criado"]
+        for arquivo in verificacao.values()
+    )
+
+    status = dados["status"]
+
+    return {
+        "id_sessao": id_sessao,
+        "paciente": nome_paciente,
+        "status": status,
+        "arquivos_criados": todos_criados,
+        "arquivos": verificacao,
+        "erro": dados.get("erro"),
+        "criado_em": dados["criado_em"],
+        "finalizado_em": dados.get("finalizado_em"),
+        "resultado": (
+            dados.get("resultado")
+            if status == "concluido"
+            else None
+        ),
+    }
+
+
+
+
+@app.get("/relatorios/{id_sessao}")
+def baixar_relatorio(id_sessao: str):
     pasta_relatorios = Path("/app/source").resolve()
-    arquivo = (pasta_relatorios / nome_arquivo).resolve()
+    arquivo = (pasta_relatorios / f"sumarizacao_{id_sessao}.pdf").resolve()
 
     # Impede acesso a arquivos fora da pasta de relatórios
     if arquivo.parent != pasta_relatorios:
@@ -585,6 +723,9 @@ def baixar_relatorio(nome_arquivo: str):
         media_type="application/pdf",
         filename=arquivo.name,
     )
+
+
+
 
 if __name__ == "__main__":
     treino_inicial()
