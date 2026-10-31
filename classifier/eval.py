@@ -192,4 +192,5 @@ if __name__ == "__main__":
     print("Versões encontradas:")
     for numero, caminho in versoes:
         print(f"  - {numero}: {caminho}")
-        gerar_metricas_bert(caminho, PROJECT_ROOT / "classifier" / "data" / "validacao_sentimentos.csv")
+        metricas = gerar_metricas_bert(caminho, PROJECT_ROOT / "classifier" / "data" / "validacao_sentimentos.csv")
+        print(f"Métricas: {metricas}")

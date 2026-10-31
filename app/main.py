@@ -79,11 +79,11 @@ EXTENSOES_PERMITIDAS = {
 MAX_AUDIO_BYTES = 100 * 1024 * 1024  # 100 MB
 
 
-
 @app.get("/models", tags=["Modelos"])
 def listar_modelos():
     """
-    Lista as versões dos modelos disponíveis e retorna suas métricas.
+    Lista as versões dos modelos disponíveis e retorna suas métricas,
+    exceto a matriz de confusão.
     """
     try:
         modelos_dirs = sorted(
@@ -103,12 +103,21 @@ def listar_modelos():
             }
 
             try:
-                modelo_info["metricas"] = gerar_metricas_bert(
+                metricas = gerar_metricas_bert(
                     pasta,
                     VALIDACAO_CSV,
                 )
+
+                # Remove a matriz de confusão, mantendo as demais métricas.
+                metricas.pop("matriz_confusao", None)
+
+                modelo_info["metricas"] = metricas
+
             except Exception as erro:
                 modelo_info["erro_metricas"] = str(erro)
+                print(
+                    f"Erro ao calcular métricas de {pasta.name}: {erro}"
+                )
 
             modelos.append(modelo_info)
 
@@ -124,6 +133,7 @@ def listar_modelos():
             detail=f"Erro ao listar os modelos: {erro}",
         ) from erro
 
+    
 class ChatRequest(BaseModel):
     message: str
 
@@ -135,7 +145,7 @@ def root():
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {"app": "Sentia", "status": "ok", "version": "0.1.0"}
 
 
 @app.get("/health/database")
@@ -392,16 +402,23 @@ async def gerar_relatorio(
 ):
     """
     Recebe um áudio, salva em source/ e executa o pipeline SentIA.
+    Retorna o nome esperado do PDF em todos os erros.
     """
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    nome_pdf = f"sumarizacao_{nome_paciente}_{timestamp}.pdf"
 
     # Evita caminhos maliciosos ou nomes inválidos.
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", nome_paciente):
         raise HTTPException(
             status_code=400,
-            detail=(
-                "Nome do paciente inválido. "
-                "Utilize letras sem acentos, números, '_' ou '-'."
-            ),
+            detail={
+                "erro": (
+                    "Nome do paciente inválido. "
+                    "Utilize letras sem acentos, números, '_' ou '-'."
+                ),
+                "arquivo_pdf": nome_pdf,
+            },
         )
 
     extensao = Path(audio.filename or "").suffix.lower()
@@ -409,13 +426,15 @@ async def gerar_relatorio(
     if extensao not in EXTENSOES_PERMITIDAS:
         raise HTTPException(
             status_code=400,
-            detail=(
-                "Formato de áudio não permitido. "
-                f"Formatos aceitos: {', '.join(sorted(EXTENSOES_PERMITIDAS))}"
-            ),
+            detail={
+                "erro": (
+                    "Formato de áudio não permitido. "
+                    f"Formatos aceitos: {', '.join(sorted(EXTENSOES_PERMITIDAS))}"
+                ),
+                "arquivo_pdf": nome_pdf,
+            },
         )
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     audio_path = (
         SOURCE_DIR
         / f"audio_{nome_paciente}_{timestamp}{extensao}"
@@ -437,7 +456,10 @@ async def gerar_relatorio(
                 if tamanho > MAX_AUDIO_BYTES:
                     raise HTTPException(
                         status_code=413,
-                        detail="O áudio excede o limite de 100 MB.",
+                        detail={
+                            "erro": "O áudio excede o limite de 100 MB.",
+                            "arquivo_pdf": nome_pdf,
+                        },
                     )
 
                 destino.write(bloco)
@@ -445,7 +467,10 @@ async def gerar_relatorio(
         if tamanho == 0:
             raise HTTPException(
                 status_code=400,
-                detail="O arquivo de áudio está vazio.",
+                detail={
+                    "erro": "O arquivo de áudio está vazio.",
+                    "arquivo_pdf": nome_pdf,
+                },
             )
 
         resultado = await run_in_threadpool(
@@ -455,7 +480,9 @@ async def gerar_relatorio(
             timestamp,
         )
 
-        resultado["trechos"] = extrair_trechos(resultado["classificacao"])
+        resultado["trechos"] = extrair_trechos(
+            resultado["classificacao"]
+        )
 
         return resultado
 
@@ -468,10 +495,13 @@ async def gerar_relatorio(
 
         raise HTTPException(
             status_code=500,
-            detail=(
-                "Não foi possível concluir o processamento do áudio. "
-                f"Consulte os logs da aplicação.{exc}"
-            ),
+            detail={
+                "erro": (
+                    "Não foi possível concluir o processamento do áudio. "
+                    "Consulte os logs da aplicação."
+                ),
+                "arquivo_pdf": nome_pdf,
+            },
         ) from exc
 
     finally:
