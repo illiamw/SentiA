@@ -534,7 +534,29 @@ async def gerar_relatorio(
     logger.info(f"Nome original: {audio.filename}")
     logger.info(f"Content-Type: {audio.content_type}")
 
+    # Identifica extensão pelo nome original
     extensao = Path(audio.filename or "").suffix.lower()
+
+    # Caso não tenha extensão, utiliza o MIME type
+    if not extensao:
+        MIME_EXTENSOES = {
+            "audio/mp4": ".mp4",
+            "audio/mpeg": ".mp3",
+            "audio/mp3": ".mp3",
+            "audio/wav": ".wav",
+            "audio/x-wav": ".wav",
+            "audio/ogg": ".ogg",
+            "audio/webm": ".webm",
+            "audio/aac": ".aac",
+            "audio/3gpp": ".3gp",
+            "video/mp4": ".mp4",
+        }
+
+        extensao = MIME_EXTENSOES.get(
+            (audio.content_type or "").lower(),
+            ""
+        )
+
 
     logger.info(f"Extensão identificada: {extensao}")
 
