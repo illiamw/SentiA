@@ -72,7 +72,7 @@ jobs:
 
             echo "Starting new containers..."
 
-            sudo docker compose up -d
+            sudo docker compose up -d --build --force-recreate
 
             # -------------------------------------------------
             # CLEANUP

@@ -5,6 +5,8 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from fastapi.responses import FileResponse
+import time
+
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -140,12 +142,14 @@ class ChatRequest(BaseModel):
 
 @app.get("/")
 def root():
-    return {"app": "Sentia", "status": "ok", "version": "0.1.0"}
+    print("Root endpoint accessed, Version 0.1.1")
+    return {"app": "Sentia", "status": "ok", "version": "0.1.1"}
 
 
 @app.get("/health")
 def health():
-    return {"app": "Sentia", "status": "ok", "version": "0.1.0"}
+    print("Health endpoint accessed, Version 0.1.1")
+    return {"app": "Sentia", "status": "ok", "version": "0.1.1"}
 
 
 @app.get("/health/database")
@@ -333,36 +337,85 @@ def executar_pipeline(
 ) -> dict:
     """Executa a transcrição, classificação e geração do relatório."""
 
+    inicio_pipeline = time.perf_counter()
+
+    def registrar_tempo(etapa: str, inicio: float) -> float:
+        """Registra o tempo decorrido de uma etapa."""
+        decorrido = time.perf_counter() - inicio
+        acumulado = time.perf_counter() - inicio_pipeline
+
+        print(
+            f"[TEMPO] {etapa}: {decorrido:.2f}s "
+            f"| Acumulado: {acumulado:.2f}s"
+        )
+        return decorrido
+
     path_transcricao = (
-        SOURCE_DIR
-        / f"transcricao_{nome_paciente}_{timestamp}.txt"
+        SOURCE_DIR / f"transcricao_{nome_paciente}_{timestamp}.txt"
     )
 
     path_classificar = (
-        SOURCE_DIR
-        / f"resultado_transcricao_{nome_paciente}_{timestamp}.json"
+        SOURCE_DIR / f"resultado_transcricao_{nome_paciente}_{timestamp}.json"
     )
 
     path_pdf = (
-        SOURCE_DIR
-        / f"sumarizacao_{nome_paciente}_{timestamp}.pdf"
+        SOURCE_DIR / f"sumarizacao_{nome_paciente}_{timestamp}.pdf"
     )
-    print(f"Gerando transcrição ...")
+
+    print(f"\n{'='*60}")
+    print(f"Iniciando pipeline para: {nome_paciente}")
+    print(f"Início: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+    print(f"{'='*60}")
+
+    tempos = {}
+
+    # 1. Transcrição
+    print("\n[1/3] Gerando transcrição...")
+    inicio = time.perf_counter()
+
     transcrever_audio(audio_path, path_transcricao)
+
+    tempos["transcricao"] = registrar_tempo("Transcrição", inicio)
     print(f"Transcrição salva em: {path_transcricao}")
-    print(f"Classificando sentimentos ...")
+
+    # 2. Classificação
+    print("\n[2/3] Classificando sentimentos...")
+    inicio = time.perf_counter()
+
     preditor(path_transcricao, path_classificar)
+
+    tempos["classificacao"] = registrar_tempo("Classificação", inicio)
     print(f"Classificação salva em: {path_classificar}")
-    print(f"Gerando relatório em PDF ...")
-    # Espera-se que esta função gere o PDF e, se configurada
-    # para isso, a minuta da sessão.
+
+    # 3. Geração do relatório
+    print("\n[3/3] Gerando relatório em PDF...")
+    inicio = time.perf_counter()
+
     gerar_relatorio_emocoes(
         caminho_json=path_classificar,
         caminho_pdf=path_pdf,
         paciente=nome_paciente,
     )
+
+    tempos["relatorio_pdf"] = registrar_tempo("Relatório PDF", inicio)
     print(f"Relatório PDF salvo em: {path_pdf}")
-    print(f"Pipeline concluído para o paciente: {nome_paciente}")
+
+    # Finalização
+    tempo_total = time.perf_counter() - inicio_pipeline
+
+    tempos["total"] = tempo_total
+
+    print(f"\n{'='*60}")
+    print(f"PIPELINE CONCLUÍDO: {nome_paciente}")
+    print(f"{'='*60}")
+
+    for etapa, duracao in tempos.items():
+        print(f"{etapa:<20}: {duracao:>10.2f}s")
+
+    print(
+        f"\nTérmino: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}"
+    )
+    print(f"{'='*60}\n")
 
     return {
         "data_hora": timestamp,
@@ -371,8 +424,10 @@ def executar_pipeline(
         "transcricao": str(path_transcricao),
         "classificacao": str(path_classificar),
         "relatorio_pdf": str(path_pdf),
+        "tempos_execucao": tempos,
         "status": "concluido",
     }
+
 
 def extrair_trechos(caminho_json: str | Path) -> dict:
     """
