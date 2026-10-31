@@ -510,7 +510,6 @@ def extrair_trechos(caminho_json: str | Path) -> dict:
     }
 
 
-
 @app.post("/relatorio/{nome_paciente}", status_code=202)
 async def gerar_relatorio(
     nome_paciente: str,
@@ -520,22 +519,34 @@ async def gerar_relatorio(
     """
     Recebe um áudio, salva em source/ e agenda
     o processamento do SentiA em segundo plano.
-    Retorna imediatamente o identificador da sessão.
     """
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     nome_pdf = f"sumarizacao_{nome_paciente}_{timestamp}.pdf"
     id_sessao = f"{nome_paciente}_{timestamp}"
 
+    # =====================================================
+    # LOG: INFORMAÇÕES INICIAIS DO ARQUIVO
+    # =====================================================
+    logger.info("=" * 60)
+    logger.info("NOVA REQUISIÇÃO DE ÁUDIO - SENTIA")
+    logger.info(f"Paciente: {nome_paciente}")
+    logger.info(f"Nome original: {audio.filename}")
+    logger.info(f"Content-Type: {audio.content_type}")
+
+    extensao = Path(audio.filename or "").suffix.lower()
+
+    logger.info(f"Extensão identificada: {extensao}")
+
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", nome_paciente):
+        logger.warning(f"Nome de paciente inválido: {nome_paciente}")
         raise HTTPException(
             status_code=400,
             detail="Nome do paciente inválido.",
         )
 
-    extensao = Path(audio.filename or "").suffix.lower()
-
     if extensao not in EXTENSOES_PERMITIDAS:
+        logger.warning(f"Extensão não permitida: {extensao}")
         raise HTTPException(
             status_code=400,
             detail={
@@ -552,6 +563,9 @@ async def gerar_relatorio(
     tamanho = 0
 
     try:
+        logger.info(f"Arquivo de destino: {audio_path}")
+        logger.info("Iniciando gravação do áudio...")
+
         # Salva o áudio antes de agendar o processamento.
         with audio_path.open("wb") as destino:
 
@@ -564,6 +578,11 @@ async def gerar_relatorio(
                 tamanho += len(bloco)
 
                 if tamanho > MAX_AUDIO_BYTES:
+                    logger.warning(
+                        f"Áudio excedeu o limite: "
+                        f"{tamanho} bytes ({tamanho / (1024 * 1024):.2f} MB)"
+                    )
+
                     raise HTTPException(
                         status_code=413,
                         detail="O áudio excede o limite de 100 MB.",
@@ -571,7 +590,25 @@ async def gerar_relatorio(
 
                 destino.write(bloco)
 
+        # =====================================================
+        # LOG: DIMENSÕES DO ARQUIVO SALVO
+        # =====================================================
+        tamanho_mb = tamanho / (1024 * 1024)
+
+        logger.info("-" * 60)
+        logger.info("UPLOAD CONCLUÍDO")
+        logger.info(f"Nome original: {audio.filename}")
+        logger.info(f"Nome salvo: {audio_path.name}")
+        logger.info(f"Extensão: {extensao}")
+        logger.info(f"MIME type: {audio.content_type}")
+        logger.info(f"Tamanho: {tamanho} bytes")
+        logger.info(f"Tamanho: {tamanho_mb:.2f} MB")
+        logger.info(f"Caminho: {audio_path.resolve()}")
+        logger.info("-" * 60)
+
         if tamanho == 0:
+            logger.warning("Arquivo de áudio vazio.")
+
             raise HTTPException(
                 status_code=400,
                 detail="O arquivo de áudio está vazio.",
@@ -588,6 +625,8 @@ async def gerar_relatorio(
             "erro": None,
         }
 
+        logger.info(f"Sessão registrada: {id_sessao}")
+
         # Agenda a execução em segundo plano.
         background_tasks.add_task(
             executar_pipeline_background,
@@ -597,7 +636,9 @@ async def gerar_relatorio(
             id_sessao,
         )
 
-        # Retorna imediatamente.
+        logger.info("Pipeline agendado em segundo plano.")
+        logger.info("=" * 60)
+
         return {
             "mensagem": "Processamento iniciado com sucesso.",
             "id_sessao": id_sessao,
@@ -615,7 +656,10 @@ async def gerar_relatorio(
     except Exception as exc:
         audio_path.unlink(missing_ok=True)
 
-        logger.exception("Erro ao iniciar processamento do SentiA.")
+        logger.exception(
+            f"Erro ao iniciar processamento do SentiA. "
+            f"Sessão: {id_sessao}"
+        )
 
         raise HTTPException(
             status_code=500,
@@ -624,7 +668,6 @@ async def gerar_relatorio(
 
     finally:
         await audio.close()
-
 
 
 @app.get("/relatorio/{id_sessao}/status")
