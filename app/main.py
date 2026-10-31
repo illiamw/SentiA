@@ -159,14 +159,14 @@ class ChatRequest(BaseModel):
 
 @app.get("/")
 def root():
-    print("Root endpoint accessed, Version 0.1.3")
-    return {"app": "Sentia", "status": "ok", "version": "0.1.3"}
+    print("Root endpoint accessed, Version 0.1.4")
+    return {"app": "Sentia", "status": "ok", "version": "0.1.4"}
 
 
 @app.get("/health")
 def health():
-    print("Health endpoint accessed, Version 0.1.3")
-    return {"app": "Sentia", "status": "ok", "version": "0.1.3"}
+    print("Health endpoint accessed, Version 0.1.4")
+    return {"app": "Sentia", "status": "ok", "version": "0.1.4"}
 
 
 @app.get("/health/database")
