@@ -145,14 +145,14 @@ class ChatRequest(BaseModel):
 
 @app.get("/")
 def root():
-    print("Root endpoint accessed, Version 0.1.2")
-    return {"app": "Sentia", "status": "ok", "version": "0.1.2"}
+    print("Root endpoint accessed, Version 0.1.3")
+    return {"app": "Sentia", "status": "ok", "version": "0.1.3"}
 
 
 @app.get("/health")
 def health():
-    print("Health endpoint accessed, Version 0.1.2")
-    return {"app": "Sentia", "status": "ok", "version": "0.1.2"}
+    print("Health endpoint accessed, Version 0.1.3")
+    return {"app": "Sentia", "status": "ok", "version": "0.1.3"}
 
 
 @app.get("/health/database")
@@ -612,11 +612,12 @@ async def gerar_relatorio(
         await audio.close()
 
 
+
 @app.get("/relatorio/{id_sessao}/status")
 def consultar_status_relatorio(id_sessao: str):
     """
-    Consulta o status do processamento e verifica
-    se os arquivos de saída foram criados.
+    Consulta o status do processamento, verifica os arquivos
+    gerados e retorna a quantidade de etapas concluídas.
     """
 
     if not re.fullmatch(
@@ -674,10 +675,15 @@ def consultar_status_relatorio(id_sessao: str):
         for nome, caminho in arquivos.items()
     }
 
-    todos_criados = all(
-        arquivo["criado"]
-        for arquivo in verificacao.values()
+    # Quantidade de etapas concluídas.
+    etapas_concluidas = sum(
+        1 for arquivo in verificacao.values()
+        if arquivo["criado"]
     )
+
+    total_etapas = len(arquivos)
+
+    todos_criados = etapas_concluidas == total_etapas
 
     status = dados["status"]
 
@@ -685,6 +691,16 @@ def consultar_status_relatorio(id_sessao: str):
         "id_sessao": id_sessao,
         "paciente": nome_paciente,
         "status": status,
+
+        "progresso": {
+            "etapas_concluidas": etapas_concluidas,
+            "total_etapas": total_etapas,
+            "percentual": round(
+                (etapas_concluidas / total_etapas) * 100,
+                2,
+            ),
+        },
+
         "arquivos_criados": todos_criados,
         "arquivos": verificacao,
         "erro": dados.get("erro"),
